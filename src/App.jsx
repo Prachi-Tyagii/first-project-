@@ -6,6 +6,7 @@ import { Icon } from 'leaflet';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+import { defaultCoordinatesByCounty, getCountyFromCoords, inferCountyFromAddress } from './locationUtils';
 
 const issueOptions = [
   'pothole',
@@ -265,20 +266,6 @@ const directory = {
   },
 };
 
-const getCountyFromCoords = (latitude, longitude) => {
-  const normalized = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
-  const matches = {
-    '39.052,-77.123': 'Montgomery County',
-    '38.864,-76.846': 'Prince George’s County',
-    '39.290,-76.612': 'Baltimore City',
-    '39.373,-76.612': 'Baltimore County',
-    '39.150,-76.861': 'Howard County',
-    '38.978,-76.492': 'Anne Arundel County',
-    '39.414,-77.410': 'Frederick County',
-  };
-  return matches[normalized] || 'Montgomery County';
-};
-
 const isEmergencyIssue = (issueType) => issueType === 'accident';
 
 const getInitials = (email) => (email ? email.charAt(0).toUpperCase() : 'U');
@@ -368,7 +355,7 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
   const [locationMethod, setLocationMethod] = useState('manual');
   const [manualAddress, setManualAddress] = useState('');
   const [coordinates, setCoordinates] = useState({ latitude: 39.29, longitude: -76.61 });
-  const [jurisdiction, setJurisdiction] = useState('Baltimore City');
+  const [jurisdiction, setJurisdiction] = useState('Select a county');
   const [contextImage, setContextImage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
 
@@ -385,14 +372,42 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
         };
         const detectedJurisdiction = getCountyFromCoords(nextCoordinates.latitude, nextCoordinates.longitude);
         setCoordinates(nextCoordinates);
-        setJurisdiction(detectedJurisdiction);
-        setLocationMethod('geo');
-        setStatusMessage(`Location detected in ${detectedJurisdiction}.`);
+        if (detectedJurisdiction) {
+          setJurisdiction(detectedJurisdiction);
+          setLocationMethod('geo');
+          setStatusMessage(`Location detected in ${detectedJurisdiction}.`);
+        } else {
+          setJurisdiction('Select a county');
+          setLocationMethod('geo');
+          setStatusMessage('We could not identify your county from this location. Please choose one manually.');
+        }
       },
       () => {
         setStatusMessage('Location access was denied. You can still enter a manual address.');
       }
     );
+  };
+
+  const handleManualAddressChange = (event) => {
+    const nextValue = event.target.value;
+    setManualAddress(nextValue);
+    setLocationMethod('manual');
+
+    const inferredCounty = inferCountyFromAddress(nextValue);
+    if (inferredCounty) {
+      setJurisdiction(inferredCounty);
+      setCoordinates(defaultCoordinatesByCounty[inferredCounty]);
+      setStatusMessage(`Address saved for ${inferredCounty}.`);
+      return;
+    }
+
+    if (nextValue.trim()) {
+      setJurisdiction('Select a county');
+      setStatusMessage('Address saved. Please choose a county to refine routing.');
+    } else {
+      setJurisdiction('Select a county');
+      setStatusMessage('');
+    }
   };
 
   const handleImageChange = (event) => {
@@ -416,12 +431,23 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
 
   const handleSubmit = (event) => {
     event.preventDefault();
+
+    if (jurisdiction === 'Select a county') {
+      setStatusMessage('Please choose a county before finding contacts.');
+      return;
+    }
+
+    const nextCoordinates =
+      jurisdiction && defaultCoordinatesByCounty[jurisdiction]
+        ? defaultCoordinatesByCounty[jurisdiction]
+        : coordinates;
+
     const nextReport = {
       issueType,
       description,
       locationMethod,
       manualAddress,
-      coordinates,
+      coordinates: nextCoordinates,
       jurisdiction,
       contextImage,
       timestamp: new Date().toISOString(),
@@ -458,17 +484,30 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
               <button type="button" onClick={() => setLocationMethod('manual')} className="rounded-[12px] border border-slate-300 px-4 py-3 text-[15px] font-semibold text-slateText">Manual address</button>
             </div>
             {locationMethod === 'manual' ? (
-              <input value={manualAddress} onChange={(event) => setManualAddress(event.target.value)} placeholder="Enter a street address or landmark" className="mt-3 w-full rounded-[12px] border border-slate-200 px-4 py-3 text-[15px]" />
+              <input value={manualAddress} onChange={handleManualAddressChange} placeholder="Enter a street address or landmark" className="mt-3 w-full rounded-[12px] border border-slate-200 px-4 py-3 text-[15px]" />
             ) : null}
             <div className="mt-3 rounded-[12px] border border-slate-200 bg-slate-50 p-3 text-sm text-mutedText">
-              <div>Detected county: <span className="font-semibold text-slateText">{jurisdiction}</span></div>
-              <div>Coordinates: {coordinates.latitude.toFixed(3)}, {coordinates.longitude.toFixed(3)}</div>
+              <div>Selected county: <span className="font-semibold text-slateText">{jurisdiction}</span></div>
+              <div>
+                Coordinates: {coordinates.latitude.toFixed(3)}, {coordinates.longitude.toFixed(3)}
+              </div>
             </div>
             {statusMessage ? <p className="mt-2 text-sm text-civic">{statusMessage}</p> : null}
           </div>
           <div>
             <label className="mb-2 block text-sm font-semibold text-slateText">County (if needed)</label>
-            <select value={jurisdiction} onChange={(event) => setJurisdiction(event.target.value)} className="w-full rounded-[12px] border border-slate-200 px-4 py-3 text-[15px]">
+            <select
+              value={jurisdiction}
+              onChange={(event) => {
+                const nextCounty = event.target.value;
+                setJurisdiction(nextCounty);
+                if (defaultCoordinatesByCounty[nextCounty]) {
+                  setCoordinates(defaultCoordinatesByCounty[nextCounty]);
+                }
+              }}
+              className="w-full rounded-[12px] border border-slate-200 px-4 py-3 text-[15px]"
+            >
+              <option value="Select a county">Select a county</option>
               {countyOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
