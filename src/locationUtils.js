@@ -8,6 +8,23 @@ export const defaultCoordinatesByCounty = {
   'Frederick County': { latitude: 39.414, longitude: -77.41 },
 };
 
+export const resolveJurisdiction = ({ jurisdiction, coordinates, manualAddress }) => {
+  if (jurisdiction && jurisdiction !== 'Select a county') {
+    return jurisdiction;
+  }
+
+  const inferredFromAddress = inferCountyFromAddress(manualAddress || '');
+  if (inferredFromAddress) {
+    return inferredFromAddress;
+  }
+
+  if (coordinates) {
+    return getCountyFromCoords(coordinates.latitude, coordinates.longitude) || 'Montgomery County';
+  }
+
+  return 'Montgomery County';
+};
+
 export const getCountyFromCoords = (latitude, longitude) => {
   const normalized = `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
   const matches = {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -358,6 +358,11 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
   const [jurisdiction, setJurisdiction] = useState('Select a county');
   const [contextImage, setContextImage] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const jurisdictionRef = useRef(jurisdiction);
+
+  useEffect(() => {
+    jurisdictionRef.current = jurisdiction;
+  }, [jurisdiction]);
 
   const handleLocationLookup = () => {
     if (!navigator.geolocation) {
@@ -374,10 +379,12 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
         setCoordinates(nextCoordinates);
         if (detectedJurisdiction) {
           setJurisdiction(detectedJurisdiction);
+          jurisdictionRef.current = detectedJurisdiction;
           setLocationMethod('geo');
           setStatusMessage(`Location detected in ${detectedJurisdiction}.`);
         } else {
           setJurisdiction('Select a county');
+          jurisdictionRef.current = 'Select a county';
           setLocationMethod('geo');
           setStatusMessage('We could not identify your county from this location. Please choose one manually.');
         }
@@ -396,6 +403,7 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
     const inferredCounty = inferCountyFromAddress(nextValue);
     if (inferredCounty) {
       setJurisdiction(inferredCounty);
+      jurisdictionRef.current = inferredCounty;
       setCoordinates(defaultCoordinatesByCounty[inferredCounty]);
       setStatusMessage(`Address saved for ${inferredCounty}.`);
       return;
@@ -403,9 +411,11 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
 
     if (nextValue.trim()) {
       setJurisdiction('Select a county');
+      jurisdictionRef.current = 'Select a county';
       setStatusMessage('Address saved. Please choose a county to refine routing.');
     } else {
       setJurisdiction('Select a county');
+      jurisdictionRef.current = 'Select a county';
       setStatusMessage('');
     }
   };
@@ -432,14 +442,20 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
   const handleSubmit = (event) => {
     event.preventDefault();
 
-    if (jurisdiction === 'Select a county') {
+    const resolvedJurisdiction = resolveJurisdiction({
+      jurisdiction: jurisdictionRef.current,
+      coordinates,
+      manualAddress,
+    });
+
+    if (!resolvedJurisdiction || resolvedJurisdiction === 'Select a county') {
       setStatusMessage('Please choose a county before finding contacts.');
       return;
     }
 
     const nextCoordinates =
-      jurisdiction && defaultCoordinatesByCounty[jurisdiction]
-        ? defaultCoordinatesByCounty[jurisdiction]
+      resolvedJurisdiction && defaultCoordinatesByCounty[resolvedJurisdiction]
+        ? defaultCoordinatesByCounty[resolvedJurisdiction]
         : coordinates;
 
     const nextReport = {
@@ -448,7 +464,7 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
       locationMethod,
       manualAddress,
       coordinates: nextCoordinates,
-      jurisdiction,
+      jurisdiction: resolvedJurisdiction,
       contextImage,
       timestamp: new Date().toISOString(),
     };
@@ -501,6 +517,7 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
               onChange={(event) => {
                 const nextCounty = event.target.value;
                 setJurisdiction(nextCounty);
+                jurisdictionRef.current = nextCounty;
                 if (defaultCoordinatesByCounty[nextCounty]) {
                   setCoordinates(defaultCoordinatesByCounty[nextCounty]);
                 }
