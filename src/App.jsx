@@ -468,7 +468,13 @@ const ReportForm = ({ onSubmit, initialIssueType = 'pothole' }) => {
       contextImage,
       timestamp: new Date().toISOString(),
     };
-    onSubmit(nextReport);
+
+    if (typeof onSubmit === 'function') {
+      onSubmit(nextReport);
+      return;
+    }
+
+    window.location.assign('/results');
   };
 
   return (
@@ -736,10 +742,12 @@ function App() {
   }, []);
 
   const saveReport = (nextReport) => {
-    const contactList = directory[nextReport.jurisdiction]?.[nextReport.issueType] || [];
+    const reportJurisdiction = nextReport?.jurisdiction || 'Montgomery County';
+    const contactList = directory[reportJurisdiction]?.[nextReport?.issueType || 'pothole'] || [];
     const savedReport = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       ...nextReport,
+      jurisdiction: reportJurisdiction,
       contactList,
     };
     const nextReports = [savedReport, ...reports];
